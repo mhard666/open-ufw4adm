@@ -6,6 +6,7 @@
 #
 # v. 00.01.00 - 20210512 - mh - Initiale Version
 # v. 00.02.00 - 20210513 - mh - Auswertung der Kommandozeilenparameter
+# v. 00.02.01 - 20210513 - mh - Korrekturen bei Auswertung Cmdline Parameters
 #
 # ToDo:
 # - Statusabfrage --status
@@ -13,7 +14,7 @@
 # - Schließen der geöffneten Verbindung erzwingen --disable
 # - Ausführliche Ausgabe --verbose
 # - Ausgabe unterdrücken --quiet
-# - Aufruf nur von einer SSH
+# - Prüfen auf SSH Verbindung. Keine SSH Verbindung nur zum schließen geöffneter Verbindungen erlaubt
 
 # Konstanten
 rERROR_RunNotAsRoot=2000
@@ -28,44 +29,52 @@ then
     # exit $rERROR_RunNotAsRoot
 fi
 
-help=0
-status=0
-disable=0
-verbose=0
-quiet=0
-failure=0
-temp=""
+clHelp=0
+clStatus=0
+clDisable=0
+clVerbose=0
+clQuiet=0
+clFailure=0
+clTemp=""
 
 # Get command line parameters
 while [ $# -gt 0 ]       #Solange die Anzahl der Parameter ($#) größer 0
 do
     case $1 in 
         -h|--help )  echo $1 
-                        help=1 ;;
+                        clHelp=1 ;;
         -s|--status )   echo $1 
-                        status=1 ;;
+                        clStatus=1 ;;
         -d|--disable )  echo $1 
-                        disable=1 ;;
+                        clDisable=1 ;;
         -v|--verbose )  echo $1
-                        verbose=1 ;;
+                        clVerbose=1 ;;
         -q|--quiet )    echo $1
-                        quiet=1 ;;
+                        clQuiet=1 ;;
         -t|--temp-file ) echo $1 $2
-                        temp="$2"
+                        clTemp="$2"
                         shift ;;
         * )             echo "Fehler"
-                        failure=1 ;;
+                        clFailure=1 ;;
     esac
-    echo $1                #Ausgabe des ersten Parameters
-    shift                  #Parameter verschieben $2->$1, $3->$2, $4->$3,...
+    shift   # Parameter verschieben $2->$1, $3->$2, $4->$3,...
 done
 
-# if [v == u]; then # kann nicht verbose und unterdrückt sein -> fehler
+if [ $clVerbose -eq $clQuiet ] && [ $clVerbose -ne 0 ]; then    # kann nicht verbose und quiet gleichzeitig sein -> fehler
+    echo "Fehler: Die Parameter --verbose und --quiet können nicht gleichzeitig verwendet werden."
+    echo ""
+    clFailure=1
+fi
 # if [status == close]; then # kann nicht status und close sein -> fehler 
 
-# if [fehler]; then # Fehlerangabe und hilfe=1 anzeigen
+if [ $clFailure -eq 1 ]; then # Fehlerangabe und hilfe=1 anzeigen
+    echo "Fehler aufgetreten, Script wird abgebrochen..."
+    echo ""
+    clHelp=1
+fi
 
-# if [help]; then
+
+if [ $clHelp -eq 1 ]; then
 #   if [status]; then # detaillierte Hilfe zu status
 #   if [disable]; then # detaillierte hilfe zu disable
 #   if [verbose]; then # detaillierte hilfe zu verbose
@@ -73,15 +82,24 @@ done
 #   if [temp]; then # detaillierte hilfe zu temp
 #   if [failure]; then # fehler und standardhilfe anzeigen
 #   else; standard hilfe
-# fi
+    echo "open-ufw4adm.sh [[-h|--help | -d|--disable | -s|--status] -t|--temp-file FILE] [-v|--verbose | -q|--quiet]"
+    echo ""
+    echo "  -h|--help             Zeigt diese Hilfe an."
+    echo "  -d|--disable          Deaktiviert die Regel, welche alle Verbindungen für den Zugriff freigegeben hat."
+    echo "  -s|--status           Zeigt den Status der Firewall an"
+    echo "  -t|--temp-file FILE   Gibt einen individuellen Dateinamen für die temporäre Datei an"
+    echo "  -v|--verbose          Ausführliche Ausgaben aktivieren"
+    echo "  -q|--quiet            Ausgaben unterdrücken"
+    echo ""
+fi
 
-echo "Hilfe: $help"
-echo "Status: $status"
-echo "Disable: $disable"
-echo "Verbose: $verbose"
-echo "Quiet: $quiet"
-echo "Fehler: $failure"
-echo "Tempfile: $temp"
+echo "Hilfe: $clHelp"
+echo "Status: $clStatus"
+echo "Disable: $clDisable"
+echo "Verbose: $clVerbose"
+echo "Quiet: $clQuiet"
+echo "Fehler: $clFailure"
+echo "Tempfile: $clTemp"
 
 
 # Exit zum Testen der command line parameters
