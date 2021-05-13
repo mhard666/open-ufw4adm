@@ -8,6 +8,8 @@
 # v. 00.02.00 - 20210513 - mh - Auswertung der Kommandozeilenparameter
 # v. 00.02.01 - 20210513 - mh - Korrekturen bei Auswertung Cmdline Parameters
 # v. 00.02.02 - 20210513 - mh - Auswertung Cmdline Parameter und Hilfe funktionieren im Wesentlichen
+# v. 00.03.00 - 20210513 - mh - Prüfung Pfad zur tempDatei
+# v. 00.04.00 - 20210513 - mh - Debug und Verbose Ausgabe als Funktion
 #
 # ToDo:
 # - Statusabfrage --status
@@ -17,10 +19,53 @@
 # - Ausgabe unterdrücken --quiet
 # - Prüfen auf SSH Verbindung. Keine SSH Verbindung nur zum schließen geöffneter Verbindungen erlaubt
 
-# Konstanten
-rERROR_None=0
-rERROR_RunNotAsRoot=2000
+### Konstanten
 
+rERROR_None=0
+rERROR_RunNotAsRoot=255
+rERROR_PathNotExist=254
+
+### Variablen
+
+debugCounter=0
+defaultTmpFile="/var/tmp/ufwadmcmd.tmp"          # Pfad zur Default-temp-Datei
+
+### Funktionen
+
+# Gibt Debuginformationen auf dem Bildschirm aus
+function printDebug() {
+    # Parameter prüfen
+    if [ $# -lt 1 ]
+    then
+        echo "usage: $0 DEBUGTEXT"
+        return $rERROR_WrongParameters
+    fi
+
+    debgText=$1
+
+    if [ $clDebug -eq 1 ]; then
+        # Counter formatieren...
+        c="$(printf '%08d' "$debugCounter")"
+        echo "D: $c: $debgText"
+        ((debugCounter++))
+    fi
+}
+
+# Gibt erweiterte Informationen auf dem Bildschirm aus
+function printVerbose() {
+    # Parameter prüfen
+    if [ $# -lt 1 ]
+    then
+        echo "usage: $0 VERBOSETEXT"
+        return $rERROR_WrongParameters
+    fi
+
+    verbText=$1
+
+    if [ $clVerbose -eq 1 ]; then
+        echo "$verbText"
+    fi
+}
 
 # Check if script is running as root...
 SYSTEM_USER_NAME=$(id -un)
@@ -34,29 +79,30 @@ fi
 clHelp=0
 clStatus=0
 clDisable=0
+clDebug=1
 clVerbose=0
 clQuiet=0
 clFailure=0
-clTemp=""
+clTmpFile=""
 
 # Get command line parameters
 while [ $# -gt 0 ]       #Solange die Anzahl der Parameter ($#) größer 0
 do
     case $1 in 
-        -h|--help )  echo $1 
+        -h|--help )     printDebug "CmdlnParam: $1" 
                         clHelp=1 ;;
-        -s|--status )   echo $1 
+        -s|--status )   printDebug "CmdlnParam: $1" 
                         clStatus=1 ;;
-        -d|--disable )  echo $1 
+        -d|--disable )  printDebug "CmdlnParam: $1" 
                         clDisable=1 ;;
-        -v|--verbose )  echo $1
+        -v|--verbose )  printDebug "CmdlnParam: $1"
                         clVerbose=1 ;;
-        -q|--quiet )    echo $1
+        -q|--quiet )    printDebug "CmdlnParam: $1"
                         clQuiet=1 ;;
-        -t|--temp-file ) echo $1 $2
-                        clTemp="$2"
+        -t|--temp-file ) printDebug "CmdlnParam: $1 $2"
+                        clTmpFile="$2"
                         shift ;;
-        * )             echo "Fehler"
+        * )             printDebug "CmdlnParam Fehler"
                         clFailure=1 ;;
     esac
     shift   # Parameter verschieben $2->$1, $3->$2, $4->$3,...
@@ -103,7 +149,7 @@ if [ $clHelp -eq 1 ]; then
 #   if [disable]; then # detaillierte hilfe zu disable
 #   if [verbose]; then # detaillierte hilfe zu verbose
 #   if [quiet]; then # detaillierte hilfe zu quiet
-#   if [temp]; then # detaillierte hilfe zu temp
+#   if [clTmpFile]; then # detaillierte hilfe zu temp
     else    # standard hilfe
         helpText="open-ufw4adm.sh [[-h|--help | -d|--disable | -s|--status] -t|--temp-file FILE] [-v|--verbose | -q|--quiet]\n
         \n
@@ -122,21 +168,38 @@ if [ $clHelp -eq 1 ]; then
     exit $errorLevel
 fi
 
-echo "Hilfe: $clHelp"
-echo "Status: $clStatus"
-echo "Disable: $clDisable"
-echo "Verbose: $clVerbose"
-echo "Quiet: $clQuiet"
-echo "Fehler: $clFailure"
-echo "Tempfile: $clTemp"
+# übergebene Kommandozeilenparameter (Debug)
+printDebug "Hilfe: $clHelp"
+printDebug "Status: $clStatus"
+printDebug "Disable: $clDisable"
+printDebug "Verbose: $clVerbose"
+printDebug "Quiet: $clQuiet"
+printDebug "Fehler: $clFailure"
+printDebug "Tempfile: $clTmpFile"
 
+
+# Temporäre Datei festlegen. Wurde ein individuelles tmpFile übergeben, dieses verwenden, sonst das globalTmpFile
+# Prüfen, ob clTemp ungleich "" ist
+if [ ! "$clTmpFile" = "" ]; then
+    # clTemp ist ungleich "" -> tmpFile = clTemp
+    tmpFile=$clTmpFile
+else
+    tmpFile=$defaultTmpFile
+fi
+printVerbose "TempFile: $tmpFile"
+
+# Prüfen, ob dirname des Temp-Pfades nicht existiert (Fehler, da dann auch die tempDatei nicht existieren, bzw. angelegt werden kann)
+tmpPath=$(dirname "$tmpFile")
+printVerbose "TempPath: $tmpPath"
+if [ ! -d $tmpPath ]; then
+    # tempPath existiert nicht -> Abbruch und Fehler
+    echo "Fehler: Das Verzeichnis, in dem die temporäre Datei bereitgestellt werden soll existiert nicht!"
+    exit $rERROR_PathNotExist
+fi
 
 # Exit zum Testen der command line parameters
 exit 99
 
-
-# temporäre Datei festlegen
-tmpfile=/var/tmp/ufwadmcmd.tmp
 
 # Statusinformation ausgeben
 # if [ $1 == "--status" ]; then
@@ -149,19 +212,19 @@ tmpfile=/var/tmp/ufwadmcmd.tmp
 # fi
 
 # prüfen ob temporäre datei existiert
-if [ -f $tmpfile ]; then
+if [ -f $tmpFile ]; then
     # es ist eine temporäre Datei vorhanden - Freigabe entfernen - temporäre Datei löschen
     
     # Commandline aus der temporären Datei lesen
-    cmdline=$(cat $tmpfile)
+    cmdline=$(cat $tmpFile)
     
     # Commandline in UFW entfernen
-    ufw remove $cmdline
+    ufw remove $cmdLine
     
     # Prüfen, ob Eintrag in UFW entfernen erfolgreich war
     if [ $? -eq 0 ]; then
         # erfolgreich -> löschen
-        del $tmpfile
+        del $tmpFile
     fi
 else
     # es ist keine temporäre Datei vorhanden - keine Freigabe gesetzt - neu setzen und tmp schreiben
@@ -173,10 +236,10 @@ else
     # ufw allow from $client
 
     cmdline="allow from $client"
-    ufw $cmdline
+    ufw $cmdLine
     # prüfen, ob Freigabe erfolgreich war 
     if [ $? -eq 0 ]; then
         # erfolgreich - cmdline temporär speichern...
-        echo $cmdline >> $tmpfile
+        echo $cmdLine >> $tmpFile
     fi
 fi
