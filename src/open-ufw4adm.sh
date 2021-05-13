@@ -5,6 +5,7 @@
 # Öffnet die UFW-Firewall für den administrativ zugreifenden Client. Ist die Firewall bereits geöffnet, wird die Freigabe wieder entfernt.
 #
 # v. 00.01.00 - 20210512 - mh - Initiale Version
+# v. 00.02.00 - 20210513 - mh - Auswertung der Kommandozeilenparameter
 #
 # ToDo:
 # - Statusabfrage --status
