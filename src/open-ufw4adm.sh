@@ -7,6 +7,7 @@
 # v. 00.01.00 - 20210512 - mh - Initiale Version
 # v. 00.02.00 - 20210513 - mh - Auswertung der Kommandozeilenparameter
 # v. 00.02.01 - 20210513 - mh - Korrekturen bei Auswertung Cmdline Parameters
+# v. 00.02.02 - 20210513 - mh - Auswertung Cmdline Parameter und Hilfe funktionieren im Wesentlichen
 #
 # ToDo:
 # - Statusabfrage --status
@@ -17,6 +18,7 @@
 # - Prüfen auf SSH Verbindung. Keine SSH Verbindung nur zum schließen geöffneter Verbindungen erlaubt
 
 # Konstanten
+rERROR_None=0
 rERROR_RunNotAsRoot=2000
 
 
@@ -60,37 +62,64 @@ do
     shift   # Parameter verschieben $2->$1, $3->$2, $4->$3,...
 done
 
+# Prüfen, ob clVerbose und clQuiet gleich sind und clVerbose ungleich 0 (Parameter --verbose und --quiet gesetzt)
 if [ $clVerbose -eq $clQuiet ] && [ $clVerbose -ne 0 ]; then    # kann nicht verbose und quiet gleichzeitig sein -> fehler
     echo "Fehler: Die Parameter --verbose und --quiet können nicht gleichzeitig verwendet werden."
     echo ""
     clFailure=1
 fi
-# if [status == close]; then # kann nicht status und close sein -> fehler 
 
+# Prüfen, ob clStatus und clDisable gleich sind und clStatus ungleich 0 (Parameter --status und --disable gesetzt)
+if [ $clStatus -eq $clDisable ] && [ $clStatus -ne 0 ]; then    # kann nicht status und disable sein -> fehler
+    echo "Fehler: Die Parameter --status und --disable können nicht gleichzeitig verwendet werden."
+    echo ""
+    clFailure=1
+fi
+
+# Prüfen, ob clFailure gleich 1 ist (Fehler aufgetreten)
 if [ $clFailure -eq 1 ]; then # Fehlerangabe und hilfe=1 anzeigen
     echo "Fehler aufgetreten, Script wird abgebrochen..."
     echo ""
     clHelp=1
 fi
 
-
+# Prüfen, ob clHelp gleich 1 ist (Hilfe anzeigen)
 if [ $clHelp -eq 1 ]; then
+    # Default Errorlevel (0) zum Beenden des Scripts setzen
+    errorLevel=$rERROR_None
+
+    # Prüfen, ob clFailure gleich 1 ist (Fehler aufgetreten)
+    if [ $clFailure -eq 1 ]; then    # zuerst fehler und standardhilfe anzeigen; errorlevel setzen!; andere cl-Variablen zurücksetzen!
+        # Errorlevel setzen
+        errorLevel=2001
+        helpText="Aufruf ....\n
+        \n
+        param1\n
+        param2\n
+        param3\n
+        "
+    
 #   if [status]; then # detaillierte Hilfe zu status
 #   if [disable]; then # detaillierte hilfe zu disable
 #   if [verbose]; then # detaillierte hilfe zu verbose
 #   if [quiet]; then # detaillierte hilfe zu quiet
 #   if [temp]; then # detaillierte hilfe zu temp
-#   if [failure]; then # fehler und standardhilfe anzeigen
-#   else; standard hilfe
-    echo "open-ufw4adm.sh [[-h|--help | -d|--disable | -s|--status] -t|--temp-file FILE] [-v|--verbose | -q|--quiet]"
-    echo ""
-    echo "  -h|--help             Zeigt diese Hilfe an."
-    echo "  -d|--disable          Deaktiviert die Regel, welche alle Verbindungen für den Zugriff freigegeben hat."
-    echo "  -s|--status           Zeigt den Status der Firewall an"
-    echo "  -t|--temp-file FILE   Gibt einen individuellen Dateinamen für die temporäre Datei an"
-    echo "  -v|--verbose          Ausführliche Ausgaben aktivieren"
-    echo "  -q|--quiet            Ausgaben unterdrücken"
-    echo ""
+    else    # standard hilfe
+        helpText="open-ufw4adm.sh [[-h|--help | -d|--disable | -s|--status] -t|--temp-file FILE] [-v|--verbose | -q|--quiet]\n
+        \n
+        -h|--help             Zeigt diese Hilfe an\n
+        -d|--disable          Deaktiviert die Regel, welche alle Verbindungen für den Zugriff freigegeben hat\n
+        -s|--status           Zeigt den Status der Firewall an\n
+        -t|--temp-file FILE   Gibt einen individuellen Dateinamen für die temporäre Datei an\n
+        -v|--verbose          Ausführliche Ausgaben aktivieren\n
+        -q|--quiet            Ausgaben unterdrücken\n
+        "
+    fi
+
+    echo -e $helpText
+    # Errorlevel zum Beenden des Scripts setzen
+    errorLevel=$rERROR_None
+    exit $errorLevel
 fi
 
 echo "Hilfe: $clHelp"
