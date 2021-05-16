@@ -11,6 +11,7 @@
 # v. 00.03.00 - 20210513 - mh - Prüfung Pfad zur tempDatei
 # v. 00.04.00 - 20210513 - mh - Debug und Verbose Ausgabe als Funktion
 # v. 00.05.00 - 20210516 - mh - temp file nicht mehr benötigt. ufw kommentar verwendet. zusätzliche funktionen
+# v. 00.05.01 - 20210516 - mh - Fehlerbehebungen
 #
 # ToDo:
 # - Statusabfrage --status
@@ -293,10 +294,10 @@ trm=$(getTerminal)
 addr=$(getClientIpAddress "$trm")
 
 # - Eintrag aus der ufw holen
-entry=$(getOpenUfwEntry "$addr $ufwComment")
+entry=$(getOpenUfwEntry $addr $ufwComment)
 
 # - ist ein Eintrag vorhanden?
-if [ ! $entry = "" ]; then
+if [ ! "$entry" = "" ]; then
     # - JA -> diesen löschen
     cmdLine="allow from $addr comment $ufwComment"
     ufw delete $cmdLine
