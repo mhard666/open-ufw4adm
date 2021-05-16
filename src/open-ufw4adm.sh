@@ -10,6 +10,7 @@
 # v. 00.02.02 - 20210513 - mh - Auswertung Cmdline Parameter und Hilfe funktionieren im Wesentlichen
 # v. 00.03.00 - 20210513 - mh - Prüfung Pfad zur tempDatei
 # v. 00.04.00 - 20210513 - mh - Debug und Verbose Ausgabe als Funktion
+# v. 00.05.00 - 20210516 - mh - temp file nicht mehr benötigt. ufw kommentar verwendet. zusätzliche funktionen
 #
 # ToDo:
 # - Statusabfrage --status
@@ -18,17 +19,19 @@
 # - Ausführliche Ausgabe --verbose
 # - Ausgabe unterdrücken --quiet
 # - Prüfen auf SSH Verbindung. Keine SSH Verbindung nur zum schließen geöffneter Verbindungen erlaubt
+# - Prüfen, ob UFW geöffnet oder geschlossen ist, auf Basis des Kommentars. Damit fällt das Tempfile weg
 
 ### Konstanten
-
 rERROR_None=0
 rERROR_RunNotAsRoot=255
 rERROR_PathNotExist=254
+rERROR_CommandFails=253
+rERROR_WrongParameters=252
 
 ### Variablen
-
 debugCounter=0
 defaultTmpFile="/var/tmp/ufwadmcmd.tmp"          # Pfad zur Default-temp-Datei
+ufwComment="open_all4ssh"
 
 ### Funktionen
 
@@ -65,6 +68,80 @@ function printVerbose() {
     if [ $clVerbose -eq 1 ]; then
         echo "$verbText"
     fi
+}
+
+# Terminal ermitteln
+function getTerminal() {
+    terminal=$(ps u | grep "ps u" | grep -v grep | awk '{print $7}')
+    echo $terminal
+}
+
+# IP-Adresse ermitteln
+function getClientIpAddress() {
+    # Parameter prüfen
+    if [ $# -lt 1 ]; then
+        echo "usage: $0 TERMINAL"
+        return $rERROR_WrongParameters
+    fi
+
+    ipClientAddress=$(w | grep $1 | awk '{print $3}')
+    echo $ipClientAddress
+}
+
+# alle Einträge in ufw zurückgeben, die über dieses script geschrieben wurden
+function getOpenUfwEntries() {
+    # Parameter prüfen
+    if [ $# -lt 1 ]; then
+        echo "usage: $0 UFW-COMMENT"
+        return $rERROR_WrongParameters
+    fi
+
+    ufwStatus=$(ufw status | grep $1)
+    echo $ufwStatus
+}
+
+# bestimmten Eintrag aus den ufw Einträgen zurückgeben, die über dieses Script geschrieben wurden
+# Parameter:    ip address     IP-Adresse des Clients
+#               ufw comment    Kommentarzeile in dem Eintrag in der ufw-Firewall
+# Ausgabe:      Eintrag in der ufw Firewall, generiert aus der Status-Ausgabe (ufw status)
+# Errorlevel:   0                           alles iO
+#               rERROR_WrongParameters      Fehler bei Parameterübergabe
+#
+function getOpenUfwEntry() {
+    # Parameter prüfen
+    if [ $# -lt 2 ]; then
+        echo "usage: $0 IP-ADDRESS UFW-COMMENT"
+        return $rERROR_WrongParameters
+    fi
+
+    ufwEntry=$(ufw status | grep $2 | grep $1 | awk '{ print $3 }')
+    echo $ufwEntry
+}
+
+# alle IPs aus den ufw Einträgen zurückgeben, die über dieses Script geschrieben wurden
+function getOpenUfwAddresses() {
+    # Parameter prüfen
+    if [ $# -lt 1 ]; then
+        echo "usage: $0 UFW-COMMENT"
+        return $rERROR_WrongParameters
+    fi
+
+    ufwAddresses=$(ufw status | grep $1 | awk '{ print $3 }')
+    echo $ufwAddresses
+}
+
+# bestimmte IP aus den ufw Einträgen zurückgeben, die über dieses Script geschrieben wurden
+function getOpenUfwAddress() {
+    # Parameter prüfen
+    if [ $# -lt 2 ]; then
+        echo "usage: $0 IP-ADDRESS UFW-COMMENT"
+        return $rERROR_WrongParameters
+    fi
+
+    ipAddress=$1
+
+    ufwAddress=$(ufw status | grep $2 | grep $1 | awk '{ print $3 }')
+    echo $ufwAddress
 }
 
 # Check if script is running as root...
@@ -200,16 +277,40 @@ fi
 # Exit zum Testen der command line parameters
 exit 99
 
-
 # Statusinformation ausgeben
-# if [ $1 == "--status" ]; then
-#	wenn $tmpfile existiert, einlesen und ufw status nach dessen inhalt grepen
-#		$cmdline=$(cat $tmpfile)
-#		ufw status | grep $cmdline
-#
-#	wenn $tmpfile nicht existiert, ssh-client-ip ermitteln und ufw status nach adresse grepen
-#		ufw status | grep $client
-# fi
+if [ $clStatus -eq 1 ]; then
+	ufw status
+
+    exit 0
+fi
+
+### neue Routine: prüfen, ob ein eintrag in ufw existiert
+
+# - aktuelles Terminal holen
+trm=$(getTerminal)
+
+# - Client IP Adresse des aktuellen Terminals holen
+addr=$(getClientIpAddress "$trm")
+
+# - Eintrag aus der ufw holen
+entry=$(getOpenUfwEntry "$addr $ufwComment")
+
+# - ist ein Eintrag vorhanden?
+if [ ! $entry = "" ]; then
+    # - JA -> diesen löschen
+    cmdLine="allow from $addr comment $ufwComment"
+    ufw delete $cmdLine
+    if [ $? -ne 0 ]; then echo "ufw delete command fails..."; exit $rERROR_CommandFails; fi
+else
+    # - NEIN -> einen anlegen
+    cmdLine="allow from $addr comment $ufwComment"
+    ufw insert 1 $cmdLine
+    if [ $? -ne 0 ]; then echo "ufw insert command fails..."; exit $rERROR_CommandFails; fi
+fi
+
+exit 0
+
+### alte Routine: über temporäre Datei prüfen
 
 # prüfen ob temporäre datei existiert
 if [ -f $tmpFile ]; then
@@ -219,7 +320,7 @@ if [ -f $tmpFile ]; then
     cmdline=$(cat $tmpFile)
     
     # Commandline in UFW entfernen
-    ufw remove $cmdLine
+    ufw delete $cmdLine
     
     # Prüfen, ob Eintrag in UFW entfernen erfolgreich war
     if [ $? -eq 0 ]; then
@@ -235,7 +336,7 @@ else
     # Freigeben (Eintrag an erster Stelle schreiben!)
     # ufw allow from $client
 
-    cmdline="allow from $client"
+    cmdline="insert 1 allow from $client comment $ufwComment"
     ufw $cmdLine
     # prüfen, ob Freigabe erfolgreich war 
     if [ $? -eq 0 ]; then
