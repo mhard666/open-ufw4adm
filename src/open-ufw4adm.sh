@@ -13,19 +13,14 @@
 # v. 00.05.00 - 20210516 - mh - temp file nicht mehr benötigt. ufw kommentar verwendet. zusätzliche funktionen
 # v. 00.05.01 - 20210516 - mh - Fehlerbehebungen
 # v. 00.06.00 - 20210517 - mh - neue Parameter, hilfe
+# v. 00.07.00 - 20210517 - mh - alle Parameter und Funktionen implementiert, alte Funktionen und Parameter entfernt
 #
-version="0.6.00"
+version="0.7.00"
 
 # ToDo:
-# - Statusabfrage --status
-# - Hilfe --help
 # - Ausführliche Ausgabe --verbose
 # - Ausgabe unterdrücken --quiet
-# - Prüfen auf SSH Verbindung. Keine SSH Verbindung nur zum schließen geöffneter Verbindungen erlaubt
-# - nur Verbindung schließen --close
-# - nur Verbindung öffnen --open
-# - Alle Verbindungen schließen --close-all
-# - nicht verbundene Verbindungen schließen --close-disconnected
+# - Parameter -I|--open-ip-address IPADDRESS (öffnet die FW für eine bestimmte IP-Adresse)
 
 ### Konstanten
 rERROR_None=0
@@ -37,7 +32,7 @@ rERROR_WrongParameters=252
 
 ### Variablen
 appString="open-ufw4adm, Version: $version, by mhard666\n\n"
-defaultHelpText="open-ufw4adm.sh [[-h|--help | -d|--disable | -s|--status] -t|--temp-file FILE] [-v|--verbose | -q|--quiet]\n
+defaultHelpText="open-ufw4adm.sh [-h|--help] [-o|--open | -c|--close | -A|--close-all | -D|--close-disconnected | -s|--status] [-d|--debug] [-v|--verbose | -q|--quiet]\n
         \n
         -h|--help                Zeigt diese Hilfe an\n
         -o|--open                Öffnet ufw für die aktuelle Verbindung, sofern sie nicht schon geöffnet ist. Wenn sie offen ist, wird sie nicht geschlossen.\n
@@ -45,7 +40,6 @@ defaultHelpText="open-ufw4adm.sh [[-h|--help | -d|--disable | -s|--status] -t|--
         -A|--close-all           Schließt alle offenen Verbindungen in der ufw.\n
         -D|--close-disconnectet  Schließt alle offenen Verbindungen in der ufw, sofern keine SSH-Verbindung zwischen Client und Server mehr besteht.\n
         -s|--status              Zeigt den Status der Firewall an.\n
-        -t|--temp-file FILE   Gibt einen individuellen Dateinamen für die temporäre Datei an.\n
         -d|--debug               Debug Modus aktivieren.\n
         -v|--verbose             Ausführliche Ausgaben aktivieren.\n
         -q|--quiet               Ausgaben unterdrücken.\n
@@ -54,6 +48,7 @@ defaultHelpText="open-ufw4adm.sh [[-h|--help | -d|--disable | -s|--status] -t|--
 debugCounter=0
 defaultTmpFile="/var/tmp/ufwadmcmd.tmp"          # Pfad zur Default-temp-Datei
 ufwComment="open_all4ssh"
+
 
 ### Funktionen
 
@@ -212,9 +207,9 @@ do
                         clVerbose=1 ;;
         -q|--quiet )    printDebug "CmdlnParam: $1"
                         clQuiet=1 ;;
-        -t|--temp-file ) printDebug "CmdlnParam: $1 $2"
-                        clTmpFile="$2"
-                        shift ;;
+#        -t|--temp-file ) printDebug "CmdlnParam: $1 $2"
+#                        clTmpFile="$2"
+#                        shift ;;
         * )             printDebug "CmdlnParam Fehler"
                         clFailure=1 ;;
     esac
@@ -250,7 +245,7 @@ if [ $clHelp -eq 1 ]; then
     # Prüfen, ob clFailure gleich 1 ist (Fehler aufgetreten)
     if [ $clFailure -eq 1 ]; then    # zuerst fehler und standardhilfe anzeigen; errorlevel setzen!; andere cl-Variablen zurücksetzen!
         # Errorlevel setzen
-        errorLevel=2001
+        errorLevel=$rERROR_WrongParameters
         helpText=$defaultHelpText
     
 #   if [status]; then # detaillierte Hilfe zu status
@@ -263,51 +258,19 @@ if [ $clHelp -eq 1 ]; then
     fi
 
     echo -e $helpText
-    # Errorlevel zum Beenden des Scripts setzen
-    errorLevel=$rERROR_None
     exit $errorLevel
 fi
 
 # übergebene Kommandozeilenparameter (Debug)
 printDebug "Hilfe: $clHelp"
 printDebug "Status: $clStatus"
-printDebug "Disable: $clDisable"
+printDebug "Open: $clOpen"
+printDebug "Close: $clClose"
+printDebug "Close All: $clCloseAll"
+printDebug "Close Diconnected: $clCloseDisconnected"
 printDebug "Verbose: $clVerbose"
 printDebug "Quiet: $clQuiet"
 printDebug "Fehler: $clFailure"
-printDebug "Tempfile: $clTmpFile"
-
-
-# Temporäre Datei festlegen. Wurde ein individuelles tmpFile übergeben, dieses verwenden, sonst das globalTmpFile
-# Prüfen, ob clTemp ungleich "" ist
-if [ ! "$clTmpFile" = "" ]; then
-    # clTemp ist ungleich "" -> tmpFile = clTemp
-    tmpFile=$clTmpFile
-else
-    tmpFile=$defaultTmpFile
-fi
-printVerbose "TempFile: $tmpFile"
-
-# Prüfen, ob dirname des Temp-Pfades nicht existiert (Fehler, da dann auch die tempDatei nicht existieren, bzw. angelegt werden kann)
-tmpPath=$(dirname "$tmpFile")
-printVerbose "TempPath: $tmpPath"
-if [ ! -d $tmpPath ]; then
-    # tempPath existiert nicht -> Abbruch und Fehler
-    echo "Fehler: Das Verzeichnis, in dem die temporäre Datei bereitgestellt werden soll existiert nicht!"
-    exit $rERROR_PathNotExist
-fi
-
-# Exit zum Testen der command line parameters
-exit 99
-
-# Statusinformation ausgeben
-if [ $clStatus -eq 1 ]; then
-	ufw status
-
-    exit 0
-fi
-
-### neue Routine: prüfen, ob ein eintrag in ufw existiert
 
 # - aktuelles Terminal holen
 trm=$(getTerminal)
@@ -317,6 +280,83 @@ addr=$(getClientIpAddress "$trm")
 
 # - Eintrag aus der ufw holen
 entry=$(getOpenUfwEntry $addr $ufwComment)
+
+# Exit zum Testen der command line parameters
+# exit 99
+
+# Statusinformation ausgeben
+if [ $clStatus -eq 1 ]; then
+	ufw=$(ufw status | grep $ufwComment)
+
+    echo "Terminal: $trm"
+    echo "IP-Address: $addr"
+    echo "ufw Status:"
+    echo $ufw
+
+    exit 0
+fi
+
+# Alle offenen Verbindungen beenden
+if [ $clCloseAll -eq 1 ]; then
+    # echo "not implemented yet."
+    # exit $rERROR_None
+
+    # Alle Verbindungen holen
+    entries=$(ufw status | grep $ufwComment)
+
+    # alle Zeilen in der Variable $entries durchlaufen
+    while read -r line 
+    do
+        # IP Addresse aus der aktuellen Zeile auslesen
+        addr=$(echo $line | awk '{print $3}')
+
+        # ufw-Commandline zusammenbauen
+        cmdLine="allow from $addr comment $ufwComment"
+
+        # Eintrag löschen
+        ufw delete $cmdLine
+        if [ $? -ne 0 ]; then echo "ufw delete command fails..."; exit $rERROR_CommandFails; fi
+
+    done <<<"$entries"
+
+    # Beenden des Scripts ohne Fehler
+    exit $rERROR_None
+fi
+
+# Disconected offene Verbindungen schließen
+if [ $clCloseDisconnected -eq 1 ]; then
+    # echo "not implemented yet."
+    # exit $rERROR_None
+
+    # Alle Verbindungen holen
+    entries=$(ufw status | grep $ufwComment)
+
+    # alle Zeilen in der Variable $entries durchlaufen
+    while read -r line 
+    do
+        # IP Addresse aus der aktuellen Zeile auslesen
+        addr=$(echo $line | awk '{print $3}')
+
+        # Prüfen, ob w keinen Eintrag mit der ermittelten IP-Adresse liefert (dann gibt es keine Verbindung mehr und die FW wird wieder geschlossen)
+        if [ $(w | grep $addr) -eq "" ]; then
+
+            # kein Eintrag vorhanden, FW schließen
+
+            # ufw-Commandline zusammenbauen
+            cmdLine="allow from $addr comment $ufwComment"
+
+            # Eintrag löschen
+            ufw delete $cmdLine
+            if [ $? -ne 0 ]; then echo "ufw delete command fails..."; exit $rERROR_CommandFails; fi
+        fi
+    done <<<"$entries"
+
+    # Beenden des Scripts ohne Fehler
+    exit $rERROR_None
+fi
+
+
+# Standardbehandlung: Öffnen oder Schließen der FW für die aktuelle Verbindung
 
 # - ist ein Eintrag vorhanden?
 if [ ! "$entry" = "" ]; then
@@ -337,37 +377,3 @@ fi
 
 exit 0
 
-### alte Routine: über temporäre Datei prüfen
-
-# prüfen ob temporäre datei existiert
-if [ -f $tmpFile ]; then
-    # es ist eine temporäre Datei vorhanden - Freigabe entfernen - temporäre Datei löschen
-    
-    # Commandline aus der temporären Datei lesen
-    cmdline=$(cat $tmpFile)
-    
-    # Commandline in UFW entfernen
-    ufw delete $cmdLine
-    
-    # Prüfen, ob Eintrag in UFW entfernen erfolgreich war
-    if [ $? -eq 0 ]; then
-        # erfolgreich -> löschen
-        del $tmpFile
-    fi
-else
-    # es ist keine temporäre Datei vorhanden - keine Freigabe gesetzt - neu setzen und tmp schreiben
-
-    # Client-IP ermitteln
-    client=$(echo $SSH_CLIENT | awk '{ print $1 }')
-
-    # Freigeben (Eintrag an erster Stelle schreiben!)
-    # ufw allow from $client
-
-    cmdline="insert 1 allow from $client comment $ufwComment"
-    ufw $cmdLine
-    # prüfen, ob Freigabe erfolgreich war 
-    if [ $? -eq 0 ]; then
-        # erfolgreich - cmdline temporär speichern...
-        echo $cmdLine >> $tmpFile
-    fi
-fi
