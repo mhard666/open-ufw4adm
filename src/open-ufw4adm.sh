@@ -12,15 +12,20 @@
 # v. 00.04.00 - 20210513 - mh - Debug und Verbose Ausgabe als Funktion
 # v. 00.05.00 - 20210516 - mh - temp file nicht mehr benötigt. ufw kommentar verwendet. zusätzliche funktionen
 # v. 00.05.01 - 20210516 - mh - Fehlerbehebungen
+# v. 00.06.00 - 20210517 - mh - neue Parameter, hilfe
 #
+version="0.6.00"
+
 # ToDo:
 # - Statusabfrage --status
 # - Hilfe --help
-# - Schließen der geöffneten Verbindung erzwingen --disable
 # - Ausführliche Ausgabe --verbose
 # - Ausgabe unterdrücken --quiet
 # - Prüfen auf SSH Verbindung. Keine SSH Verbindung nur zum schließen geöffneter Verbindungen erlaubt
-# - Prüfen, ob UFW geöffnet oder geschlossen ist, auf Basis des Kommentars. Damit fällt das Tempfile weg
+# - nur Verbindung schließen --close
+# - nur Verbindung öffnen --open
+# - Alle Verbindungen schließen --close-all
+# - nicht verbundene Verbindungen schließen --close-disconnected
 
 ### Konstanten
 rERROR_None=0
@@ -29,7 +34,23 @@ rERROR_PathNotExist=254
 rERROR_CommandFails=253
 rERROR_WrongParameters=252
 
+
 ### Variablen
+appString="open-ufw4adm, Version: $version, by mhard666\n\n"
+defaultHelpText="open-ufw4adm.sh [[-h|--help | -d|--disable | -s|--status] -t|--temp-file FILE] [-v|--verbose | -q|--quiet]\n
+        \n
+        -h|--help                Zeigt diese Hilfe an\n
+        -o|--open                Öffnet ufw für die aktuelle Verbindung, sofern sie nicht schon geöffnet ist. Wenn sie offen ist, wird sie nicht geschlossen.\n
+        -c|--close               Schließt ufw für die aktuelle Verbindung, sofern sie nicht schon geschlossen ist. Wenn sie geschlossen ist, wird sie nicht geöffnet.\n
+        -A|--close-all           Schließt alle offenen Verbindungen in der ufw.\n
+        -D|--close-disconnectet  Schließt alle offenen Verbindungen in der ufw, sofern keine SSH-Verbindung zwischen Client und Server mehr besteht.\n
+        -s|--status              Zeigt den Status der Firewall an.\n
+        -t|--temp-file FILE   Gibt einen individuellen Dateinamen für die temporäre Datei an.\n
+        -d|--debug               Debug Modus aktivieren.\n
+        -v|--verbose             Ausführliche Ausgaben aktivieren.\n
+        -q|--quiet               Ausgaben unterdrücken.\n
+        "
+
 debugCounter=0
 defaultTmpFile="/var/tmp/ufwadmcmd.tmp"          # Pfad zur Default-temp-Datei
 ufwComment="open_all4ssh"
@@ -139,11 +160,14 @@ function getOpenUfwAddress() {
         return $rERROR_WrongParameters
     fi
 
-    ipAddress=$1
-
     ufwAddress=$(ufw status | grep $2 | grep $1 | awk '{ print $3 }')
     echo $ufwAddress
 }
+
+### Start
+
+# Anwendungsinformation ausgeben
+echo -e $appString
 
 # Check if script is running as root...
 SYSTEM_USER_NAME=$(id -un)
@@ -156,7 +180,10 @@ fi
 
 clHelp=0
 clStatus=0
-clDisable=0
+clOpen=0
+clClose=0
+clCloseAll=0
+clCloseDisconnected=0
 clDebug=1
 clVerbose=0
 clQuiet=0
@@ -171,8 +198,16 @@ do
                         clHelp=1 ;;
         -s|--status )   printDebug "CmdlnParam: $1" 
                         clStatus=1 ;;
-        -d|--disable )  printDebug "CmdlnParam: $1" 
-                        clDisable=1 ;;
+        -o|--open )     printDebug "CmdlnParam: $1" 
+                        clOpen=1 ;;
+        -c|--close )    printDebug "CmdlnParam: $1" 
+                        clClose=1 ;;
+        -A|--close-all )  printDebug "CmdlnParam: $1" 
+                        clCloseAll=1 ;;
+        -D|--close-disconnected )  printDebug "CmdlnParam: $1" 
+                        clCloseDisconnected=1 ;;
+        -d|--debug )    printDebug "CmdlnParam: $1"
+                        clDebug=1 ;;
         -v|--verbose )  printDebug "CmdlnParam: $1"
                         clVerbose=1 ;;
         -q|--quiet )    printDebug "CmdlnParam: $1"
@@ -187,15 +222,15 @@ do
 done
 
 # Prüfen, ob clVerbose und clQuiet gleich sind und clVerbose ungleich 0 (Parameter --verbose und --quiet gesetzt)
-if [ $clVerbose -eq $clQuiet ] && [ $clVerbose -ne 0 ]; then    # kann nicht verbose und quiet gleichzeitig sein -> fehler
+if [ $(($clVerbose + $clQuiet)) -gt 1 ]; then    # kann nicht verbose und quiet gleichzeitig sein -> fehler
     echo "Fehler: Die Parameter --verbose und --quiet können nicht gleichzeitig verwendet werden."
     echo ""
     clFailure=1
 fi
 
-# Prüfen, ob clStatus und clDisable gleich sind und clStatus ungleich 0 (Parameter --status und --disable gesetzt)
-if [ $clStatus -eq $clDisable ] && [ $clStatus -ne 0 ]; then    # kann nicht status und disable sein -> fehler
-    echo "Fehler: Die Parameter --status und --disable können nicht gleichzeitig verwendet werden."
+# Prüfen, ob clStatus, clOpen, clClose, clCloseAll, clCloseDisconnected zusammen gesetzt sind (mehr als ein Parameter von --status, --open, --close, --close-all und --close-disconnected gesetzt)
+if [ $(($clStatus + $clOpen + $clClose + $clCloseAll + $clCloseDisconnected)) -gt 1 ]; then
+    echo "Fehler: Die Parameter --status, --open, --close, --close-all und --close-disconnected können nicht gleichzeitig verwendet werden."
     echo ""
     clFailure=1
 fi
@@ -216,12 +251,7 @@ if [ $clHelp -eq 1 ]; then
     if [ $clFailure -eq 1 ]; then    # zuerst fehler und standardhilfe anzeigen; errorlevel setzen!; andere cl-Variablen zurücksetzen!
         # Errorlevel setzen
         errorLevel=2001
-        helpText="Aufruf ....\n
-        \n
-        param1\n
-        param2\n
-        param3\n
-        "
+        helpText=$defaultHelpText
     
 #   if [status]; then # detaillierte Hilfe zu status
 #   if [disable]; then # detaillierte hilfe zu disable
@@ -229,15 +259,7 @@ if [ $clHelp -eq 1 ]; then
 #   if [quiet]; then # detaillierte hilfe zu quiet
 #   if [clTmpFile]; then # detaillierte hilfe zu temp
     else    # standard hilfe
-        helpText="open-ufw4adm.sh [[-h|--help | -d|--disable | -s|--status] -t|--temp-file FILE] [-v|--verbose | -q|--quiet]\n
-        \n
-        -h|--help             Zeigt diese Hilfe an\n
-        -d|--disable          Deaktiviert die Regel, welche alle Verbindungen für den Zugriff freigegeben hat\n
-        -s|--status           Zeigt den Status der Firewall an\n
-        -t|--temp-file FILE   Gibt einen individuellen Dateinamen für die temporäre Datei an\n
-        -v|--verbose          Ausführliche Ausgaben aktivieren\n
-        -q|--quiet            Ausgaben unterdrücken\n
-        "
+        helpText=$defaultHelpText
     fi
 
     echo -e $helpText
@@ -299,11 +321,15 @@ entry=$(getOpenUfwEntry $addr $ufwComment)
 # - ist ein Eintrag vorhanden?
 if [ ! "$entry" = "" ]; then
     # - JA -> diesen löschen
+    # Prüfen, ob --open übergeben wurde (dann dürfen nur neue Verbindungen geöffnet werden)
+    # if [ ! $clOpen -eq 1 ]; then        # nur wenn nicht --open übergeben wurde
     cmdLine="allow from $addr comment $ufwComment"
     ufw delete $cmdLine
     if [ $? -ne 0 ]; then echo "ufw delete command fails..."; exit $rERROR_CommandFails; fi
 else
     # - NEIN -> einen anlegen
+    # Prüfen, ob --close übergeben wurde (dann dürfen nur offene Verbindungen geschlossen werden)
+    # if [ ! $clClose -eq 1 ]; then       # nur wenn nicht --close übergeben wurde.
     cmdLine="allow from $addr comment $ufwComment"
     ufw insert 1 $cmdLine
     if [ $? -ne 0 ]; then echo "ufw insert command fails..."; exit $rERROR_CommandFails; fi
