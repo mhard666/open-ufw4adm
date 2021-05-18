@@ -14,8 +14,9 @@
 # v. 00.05.01 - 20210516 - mh - Fehlerbehebungen
 # v. 00.06.00 - 20210517 - mh - neue Parameter, hilfe
 # v. 00.07.00 - 20210517 - mh - alle Parameter und Funktionen implementiert, alte Funktionen und Parameter entfernt
+# v. 00.07.01 - 20210518 - mh - Fehlerbehebungen
 #
-version="0.7.00"
+version="0.7.01"
 
 # ToDo:
 # - Ausführliche Ausgabe --verbose
@@ -303,6 +304,12 @@ if [ $clCloseAll -eq 1 ]; then
 
     # Alle Verbindungen holen
     entries=$(ufw status | grep $ufwComment)
+    
+    # Prüfen, ob entries leer ist -> Abbruch
+    if [ $entries -eq "" ]; then
+        echo "nothing to do..."
+        exit $rERROR_None
+    fi
 
     # alle Zeilen in der Variable $entries durchlaufen
     while read -r line 
@@ -330,6 +337,12 @@ if [ $clCloseDisconnected -eq 1 ]; then
 
     # Alle Verbindungen holen
     entries=$(ufw status | grep $ufwComment)
+    
+    # Prüfen, ob entries leer ist -> Abbruch
+    if [ $entries -eq "" ]; then
+        echo "nothing to do..."
+        exit $rERROR_None
+    fi
 
     # alle Zeilen in der Variable $entries durchlaufen
     while read -r line 
@@ -362,17 +375,19 @@ fi
 if [ ! "$entry" = "" ]; then
     # - JA -> diesen löschen
     # Prüfen, ob --open übergeben wurde (dann dürfen nur neue Verbindungen geöffnet werden)
-    # if [ ! $clOpen -eq 1 ]; then        # nur wenn nicht --open übergeben wurde
-    cmdLine="allow from $addr comment $ufwComment"
-    ufw delete $cmdLine
-    if [ $? -ne 0 ]; then echo "ufw delete command fails..."; exit $rERROR_CommandFails; fi
+    if [ ! $clOpen -eq 1 ]; then        # nur wenn nicht --open übergeben wurde
+        cmdLine="allow from $addr comment $ufwComment"
+        ufw delete $cmdLine
+        if [ $? -ne 0 ]; then echo "ufw delete command fails..."; exit $rERROR_CommandFails; fi
+    fi
 else
     # - NEIN -> einen anlegen
     # Prüfen, ob --close übergeben wurde (dann dürfen nur offene Verbindungen geschlossen werden)
-    # if [ ! $clClose -eq 1 ]; then       # nur wenn nicht --close übergeben wurde.
-    cmdLine="allow from $addr comment $ufwComment"
-    ufw insert 1 $cmdLine
-    if [ $? -ne 0 ]; then echo "ufw insert command fails..."; exit $rERROR_CommandFails; fi
+    if [ ! $clClose -eq 1 ]; then       # nur wenn nicht --close übergeben wurde.
+        cmdLine="allow from $addr comment $ufwComment"
+        ufw insert 1 $cmdLine
+        if [ $? -ne 0 ]; then echo "ufw insert command fails..."; exit $rERROR_CommandFails; fi
+    fi
 fi
 
 exit 0
