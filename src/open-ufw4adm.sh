@@ -15,8 +15,9 @@
 # v. 00.06.00 - 20210517 - mh - neue Parameter, hilfe
 # v. 00.07.00 - 20210517 - mh - alle Parameter und Funktionen implementiert, alte Funktionen und Parameter entfernt
 # v. 00.07.01 - 20210518 - mh - Fehlerbehebungen
+# v. 00.07.02 - 20210518 - mh - Fehlerbehebungen
 #
-version="0.7.01"
+version="0.7.02"
 
 # ToDo:
 # - Ausführliche Ausgabe --verbose
@@ -306,7 +307,7 @@ if [ $clCloseAll -eq 1 ]; then
     entries=$(ufw status | grep $ufwComment)
     
     # Prüfen, ob entries leer ist -> Abbruch
-    if [ $entries -eq "" ]; then
+    if [ "$entries" = "" ]; then
         echo "nothing to do..."
         exit $rERROR_None
     fi
@@ -339,7 +340,7 @@ if [ $clCloseDisconnected -eq 1 ]; then
     entries=$(ufw status | grep $ufwComment)
     
     # Prüfen, ob entries leer ist -> Abbruch
-    if [ $entries -eq "" ]; then
+    if [ "$entries" = "" ]; then
         echo "nothing to do..."
         exit $rERROR_None
     fi
@@ -351,7 +352,7 @@ if [ $clCloseDisconnected -eq 1 ]; then
         addr=$(echo $line | awk '{print $3}')
 
         # Prüfen, ob w keinen Eintrag mit der ermittelten IP-Adresse liefert (dann gibt es keine Verbindung mehr und die FW wird wieder geschlossen)
-        if [ $(w | grep $addr) -eq "" ]; then
+        if [ "$(w | grep $addr)" = "" ]; then
 
             # kein Eintrag vorhanden, FW schließen
 
